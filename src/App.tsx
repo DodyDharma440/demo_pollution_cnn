@@ -1,20 +1,12 @@
-const classNames = [
-  "a_Good",
-  "b_Moderate",
-  "c_Unhealthy_Activity",
-  "d_Unhealthy",
-  "e_Very_Unhealthy",
-  "f_Severe",
-];
-
-import { useEffect, useState } from "react";
-import * as tf from "@tensorflow/tfjs";
+import { useState } from "react";
 import clsx from "clsx";
-import VideoInput from "./VideoInput";
-import FileInput from "./FileInput";
+import { apiWeather } from "./configs/api";
+import FileInput from "./components/FileInput";
+import VideoInput from "./components/VideoInput";
+
+const classNames = ["cloudy", "rain", "shine", "sunrise"];
 
 const App = () => {
-  const [model, setModel] = useState<tf.LayersModel | null>(null);
   const [prediction, setPrediction] = useState("");
   const [confidence, setConfidence] = useState(0);
 
@@ -22,58 +14,31 @@ const App = () => {
     (localStorage.getItem("inputMode") as "file" | "video") ?? "file"
   );
 
-  useEffect(() => {
-    const loadModel = async () => {
-      const loadedModel = await tf.loadLayersModel(
-        "/models2/tf_model/model.json",
-        { strict: false }
-      );
-      setModel(loadedModel);
-    };
-    loadModel();
-  }, []);
+  const handlePredict = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const { data } = await apiWeather.post<{
+        predicted_class: string;
+        confidence: number;
+      }>("/weather", formData);
 
-  const handlePredict = async (
-    element: HTMLImageElement | HTMLVideoElement | null
-  ) => {
-    if (element && model) {
-      const imgData = tf.browser.fromPixels(element);
-
-      const [predictedClass, confidence] = tf.tidy(() => {
-        const tensorImg = imgData
-          .resizeNearestNeighbor([128, 128])
-          .toFloat()
-          .expandDims();
-        const result = model.predict(tensorImg) as tf.Tensor<tf.Rank>;
-
-        const predictions = result.dataSync();
-        console.log(
-          "🚀 ~ const[predictedClass,confidence]=tf.tidy ~ predictions:",
-          predictions
-        );
-        const predicted_index = result.as1D().argMax().dataSync()[0];
-
-        const predictedClass = classNames[predicted_index];
-        const confidence = Math.round(predictions[predicted_index] * 100);
-
-        return [predictedClass, confidence];
-      });
-
-      setPrediction(predictedClass);
-      setConfidence(confidence);
+      setPrediction(data.predicted_class);
+      setConfidence(data.confidence);
+    } catch (error) {
+      console.error(error);
     }
   };
 
   return (
     <div className="container mx-auto max-w-lg p-10">
-      <h1 className="text-xl mb-4 font-bold text-center">
-        Air Pollution Prediction
-      </h1>
+      <h1 className="text-xl mb-4 font-bold text-center">Weather Prediction</h1>
 
       <div className="flex items-center mb-6 gap-4">
         {["video", "file"].map((t) => {
           return (
             <button
+              key={t}
               className={clsx(
                 "capitalize w-full px-4 py-2 border border-indigo-500 rounded-lg",
                 {
@@ -102,7 +67,7 @@ const App = () => {
             {
               "bg-green-500": prediction === classNames[0],
               "bg-green-700": prediction === classNames[1],
-              "bg-blue-400": prediction === classNames[2],
+              "!bg-blue-400": prediction === classNames[2],
               "bg-yellow-500": prediction === classNames[3],
               "bg-orange-500": prediction === classNames[4],
               "bg-red-500": prediction === classNames[5],
