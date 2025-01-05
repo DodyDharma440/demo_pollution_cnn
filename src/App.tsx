@@ -7,99 +7,60 @@ const classNames = [
   "f_Severe",
 ];
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as tf from "@tensorflow/tfjs";
 import clsx from "clsx";
+import VideoInput from "./VideoInput";
+import FileInput from "./FileInput";
 
 const App = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [model, setModel] = useState<tf.LayersModel | null>(null);
   const [prediction, setPrediction] = useState("");
   const [confidence, setConfidence] = useState(0);
 
-  const [cameraOptions, setCameraOptions] = useState<MediaDeviceInfo[]>([]);
-  const [selectedCamera, setSelectedCamera] = useState("");
-
-  useEffect(() => {
-    const getDevices = async () => {
-      const data = await navigator.mediaDevices.enumerateDevices();
-      const devices = data.filter((d) => d.kind === "videoinput");
-      setCameraOptions(devices);
-      const selected = localStorage.getItem("selectedCamera");
-
-      if (selected) {
-        setSelectedCamera(selected);
-      } else {
-        setSelectedCamera(devices[0].deviceId);
-        localStorage.setItem("selectedCamera", devices[0].deviceId);
-      }
-    };
-    getDevices();
-  }, []);
+  const [inputMode, setInputMode] = useState<"file" | "video">(
+    (localStorage.getItem("inputMode") as "file" | "video") ?? "file"
+  );
 
   useEffect(() => {
     const loadModel = async () => {
       const loadedModel = await tf.loadLayersModel(
-        "/models/tf_model/model.json",
+        "/models2/tf_model/model.json",
         { strict: false }
-      ); // Path ke model Anda
+      );
       setModel(loadedModel);
     };
     loadModel();
   }, []);
 
-  // Setup kamera
-  useEffect(() => {
-    if (selectedCamera) {
-      const setupCamera = async () => {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: { deviceId: selectedCamera },
-            });
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream;
-            }
-          } catch (error) {
-            console.error("Error accessing camera:", error);
-          }
-        } else {
-          console.error("getUserMedia not supported on this browser.");
-        }
-      };
-      setupCamera();
-    }
-  }, [selectedCamera]);
+  const handlePredict = async (
+    element: HTMLImageElement | HTMLVideoElement | null
+  ) => {
+    if (element && model) {
+      const imgData = tf.browser.fromPixels(element);
 
-  const predictFrame = async () => {
-    if (videoRef.current && model) {
-      tf.tidy(() => {
-        const video = videoRef.current;
-
-        const img = tf.browser
-          .fromPixels(video!)
+      const [predictedClass, confidence] = tf.tidy(() => {
+        const tensorImg = imgData
           .resizeNearestNeighbor([128, 128])
+          .toFloat()
           .expandDims();
+        const result = model.predict(tensorImg) as tf.Tensor<tf.Rank>;
 
-        const predictions =
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (model.predict(img) as tf.Tensor<any>).arraySync()[0];
-        console.log("🚀 ~ handlePredict ~ predictions:", predictions);
-        const predictedIndex = predictions.indexOf(Math.max(...predictions));
-        const confidence = predictions[predictedIndex];
-        setConfidence(confidence);
+        const predictions = result.dataSync();
+        console.log(
+          "🚀 ~ const[predictedClass,confidence]=tf.tidy ~ predictions:",
+          predictions
+        );
+        const predicted_index = result.as1D().argMax().dataSync()[0];
 
-        if (confidence < 0.8) {
-          setPrediction("Unknown");
-        } else {
-          const threshold = 0.7;
-          if (confidence >= threshold) {
-            setPrediction(classNames[predictedIndex]);
-          }
-        }
+        const predictedClass = classNames[predicted_index];
+        const confidence = Math.round(predictions[predicted_index] * 100);
+
+        return [predictedClass, confidence];
       });
 
-      tf.dispose();
+      setPrediction(predictedClass);
+      setConfidence(confidence);
     }
   };
 
@@ -108,36 +69,32 @@ const App = () => {
       <h1 className="text-xl mb-4 font-bold text-center">
         Air Pollution Prediction
       </h1>
-      <div className="mb-4">
-        <label>Select camera</label>
-        <select
-          value={selectedCamera}
-          onChange={(e) => {
-            setSelectedCamera(e.target.value);
-            localStorage.setItem("selectedCamera", e.target.value);
-          }}
-          className="border border-gray-200 px-4 py-2 w-full appearance-none rounded-lg"
-        >
-          {cameraOptions.map((opt) => {
-            return <option value={opt.deviceId}>{opt.label}</option>;
-          })}
-        </select>
+
+      <div className="flex items-center mb-6 gap-4">
+        {["video", "file"].map((t) => {
+          return (
+            <button
+              className={clsx(
+                "capitalize w-full px-4 py-2 border border-indigo-500 rounded-lg",
+                {
+                  ["bg-indigo-500 text-white"]: t === inputMode,
+                  ["bg-transparent"]: t !== inputMode,
+                }
+              )}
+              onClick={() => {
+                setInputMode(t as typeof inputMode);
+                localStorage.setItem("inputMode", t);
+              }}
+            >
+              {t}
+            </button>
+          );
+        })}
       </div>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="w-full h-[550px] mb-5 object-cover rounded-xl overflow-hidden"
-      ></video>
-      <div className="w-full">
-        <button
-          className="px-6 py-4 w-full rounded-md bg-indigo-500 hover:bg-indigo-700 text-white"
-          // onClick={() => setIsPredicting((prev) => !prev)}
-          onClick={predictFrame}
-        >
-          Capture and Predict
-        </button>
-      </div>
+
+      {inputMode === "video" ? <VideoInput onPredict={handlePredict} /> : null}
+      {inputMode === "file" ? <FileInput onPredict={handlePredict} /> : null}
+
       {prediction ? (
         <div
           className={clsx(
@@ -153,7 +110,9 @@ const App = () => {
           )}
         >
           <h2 className="text-center">{prediction}</h2>
-          <h2 className="text-center text-sm">Akurasi: {confidence}</h2>
+          {prediction === "Unknown" ? null : (
+            <h2 className="text-center text-sm">Akurasi: {confidence}</h2>
+          )}
         </div>
       ) : null}
     </div>
