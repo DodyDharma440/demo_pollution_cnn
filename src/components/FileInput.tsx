@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { InputProps } from "./types";
+import { InputProps } from "../types/types";
 
 const FileInput: React.FC<InputProps> = ({ onPredict }) => {
   const imageRef = useRef<HTMLImageElement>(null);
