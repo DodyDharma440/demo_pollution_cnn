@@ -61,10 +61,12 @@ const VideoInput: React.FC<InputProps> = ({ onPredict }) => {
 
   useEffect(() => {
     if (selectedCamera) {
+      let stream: MediaStream;
+
       const setupCamera = async () => {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            stream = await navigator.mediaDevices.getUserMedia({
               video: { deviceId: selectedCamera },
             });
             if (videoRef.current) {
@@ -77,7 +79,12 @@ const VideoInput: React.FC<InputProps> = ({ onPredict }) => {
           console.error("getUserMedia not supported on this browser.");
         }
       };
+
       setupCamera();
+
+      return () => {
+        stream.getTracks().forEach((t) => t.stop());
+      };
     }
   }, [onPredict, selectedCamera]);
 

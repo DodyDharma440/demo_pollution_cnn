@@ -48,6 +48,8 @@ const App = () => {
               )}
               onClick={() => {
                 setInputMode(t as typeof inputMode);
+                setPrediction("");
+                setConfidence(0);
                 localStorage.setItem("inputMode", t);
               }}
             >
